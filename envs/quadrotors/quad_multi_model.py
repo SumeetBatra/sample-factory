@@ -7,15 +7,15 @@ from algorithms.utils.pytorch_utils import calc_num_elements
 from utils.utils import log
 
 
-
-class QuadMultiEncoder(EncoderBase):
+class QuadMultiMeanEncoder(EncoderBase):
+    '''Mean embedding encoder based on the DeepRL for Swarms Paper'''
     def __init__(self, cfg, obs_space, timing, self_obs_dim=18, neighbor_obs_dim=6, neighbor_hidden_size=32):
         super().__init__(cfg, timing)
         self.self_obs_dim = self_obs_dim
         self.neighbor_obs_dim = neighbor_obs_dim
         self.neighbor_hidden_size = neighbor_hidden_size
+        self.device = torch.device('cpu' if cfg.device == 'cpu' else 'cuda')
 
-        obs_shape = get_obs_shape(obs_space)
         fc_encoder_layer = cfg.hidden_size
         self.self_encoder = nn.Sequential(
             nn.Linear(self.self_obs_dim, fc_encoder_layer),
@@ -31,16 +31,23 @@ class QuadMultiEncoder(EncoderBase):
         self.self_encoder_out_size = calc_num_elements(self.self_encoder, (self.self_obs_dim,))
         self.neighbor_encoder_out_size = calc_num_elements(self.neighbor_encoder, (self.neighbor_obs_dim,))
 
-        self.init_fc_blocks(self.self_encoder_out_size)
-        self.init_fc_blocks(self.neighbor_encoder_out_size)
+        self.init_fc_blocks(self.self_encoder_out_size + self.neighbor_encoder_out_size)
 
 
 
     def forward(self, obs_dict):
-        t = torch.randn_like(self.obs_shape)
-        x = self.encoder(t)
-        return x
+        obs = obs_dict['obs']
+        # TODO: Don't hardcode obs_self and obs_neighbors (pass a labeled dict??)
+        obs_self, obs_neighbors = obs[:, :18], obs[:, 18:]
+        self_embed = self.self_encoder(obs_self)
+        neighbor_embeds = []
+        for i in range(0, obs_neighbors.shape[1], self.neighbor_obs_dim):
+            embed = self.neighbor_encoder(obs_neighbors[:, i:i+self.neighbor_obs_dim])
+            neighbor_embeds.append(embed)
+        mean_embed = torch.mean(torch.stack(neighbor_embeds), 0)
+        embeddings = torch.cat((self_embed, mean_embed), dim=1)
+        return embeddings
 
 
 def register_models():
-    register_custom_encoder('quad_multi_encoder', QuadMultiEncoder)
+    register_custom_encoder('quad_multi_encoder', QuadMultiMeanEncoder)
