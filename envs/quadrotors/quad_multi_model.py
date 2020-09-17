@@ -32,7 +32,8 @@ class QuadMultiMeanEncoder(EncoderBase):
         self.self_encoder_out_size = calc_num_elements(self.self_encoder, (self.self_obs_dim,))
         self.neighbor_encoder_out_size = calc_num_elements(self.neighbor_encoder, (self.neighbor_obs_dim,))
 
-        self.init_fc_blocks(self.self_encoder_out_size + self.neighbor_encoder_out_size)
+        # self.init_fc_blocks(self.self_encoder_out_size + self.neighbor_encoder_out_size)
+        self.init_fc_blocks(self.self_encoder_out_size)
 
 
 
