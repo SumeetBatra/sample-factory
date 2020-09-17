@@ -16,6 +16,7 @@ class QuadMultiMeanEncoder(EncoderBase):
         self.neighbor_hidden_size = neighbor_hidden_size
         self.device = torch.device('cpu' if cfg.device == 'cpu' else 'cuda')
 
+
         fc_encoder_layer = cfg.hidden_size
         self.self_encoder = nn.Sequential(
             nn.Linear(self.self_obs_dim, fc_encoder_layer),
@@ -41,12 +42,12 @@ class QuadMultiMeanEncoder(EncoderBase):
         obs_self, obs_neighbors = obs[:, :18], obs[:, 18:]
         self_embed = self.self_encoder(obs_self)
         neighbor_embeds = []
-        for i in range(0, obs_neighbors.shape[1], self.neighbor_obs_dim):
-            embed = self.neighbor_encoder(obs_neighbors[:, i:i+self.neighbor_obs_dim])
-            neighbor_embeds.append(embed)
-        mean_embed = torch.mean(torch.stack(neighbor_embeds), 0)
-        embeddings = torch.cat((self_embed, mean_embed), dim=1)
-        return embeddings
+        # for i in range(0, obs_neighbors.shape[1], self.neighbor_obs_dim):
+        #     embed = self.neighbor_encoder(obs_neighbors[:, i:i+self.neighbor_obs_dim])
+        #     neighbor_embeds.append(embed)
+        # mean_embed = torch.mean(torch.stack(neighbor_embeds), 0)
+        # embeddings = torch.cat((self_embed, mean_embed), dim=1)
+        return self_embed
 
 
 def register_models():
