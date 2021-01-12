@@ -12,7 +12,7 @@ class QuadMultiMeanEncoder(EncoderBase):
         super().__init__(cfg, timing)
         self.self_obs_dim = self_obs_dim
         self.neighbor_obs_dim = neighbor_obs_dim
-        self.neighbor_hidden_size = neighbor_hidden_size
+        self.neighbor_hidden_size = cfg.encoder_hidden_size
         self.use_spectral_norm = cfg.use_spectral_norm
         self.obstacle_mode = cfg.quads_obstacle_mode
         self.num_agents = cfg.quads_num_agents
