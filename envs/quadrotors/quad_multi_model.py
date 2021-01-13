@@ -5,6 +5,8 @@ from algorithms.appo.model_utils import nonlinearity, EncoderBase, \
     register_custom_encoder, ENCODER_REGISTRY, fc_layer
 from algorithms.utils.pytorch_utils import calc_num_elements
 
+T = 8
+
 
 class QuadMultiMeanEncoder(EncoderBase):
     # Mean embedding encoder based on the DeepRL for Swarms Paper
@@ -17,6 +19,7 @@ class QuadMultiMeanEncoder(EncoderBase):
         self.obstacle_mode = cfg.quads_obstacle_mode
         self.num_agents = cfg.quads_num_agents
         self.obstacle_encoder_out_size = 0
+        self.memory = []
 
         fc_encoder_layer = cfg.hidden_size
         # encode the current drone's observations
@@ -50,8 +53,21 @@ class QuadMultiMeanEncoder(EncoderBase):
         self.self_encoder_out_size = calc_num_elements(self.self_encoder, (self.self_obs_dim,))
         self.neighbor_encoder_out_size = calc_num_elements(self.neighbor_encoder, (self.neighbor_obs_dim,))
 
+        # convolve over T timesteps
+        self.conv_layer = nn.Sequential(
+            nn.Conv1d(in_channels=T, out_channels=2*T, kernel_size=3, stride=1),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            nn.MaxPool1d(kernel_size=3),
+            nn.Conv1d(in_channels=2*T, out_channels=4*T, kernel_size=3, stride=1),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            nn.MaxPool1d(kernel_size=3)
+        )
+        self.conv_out_size = 192  # will only work if neighbor hidden size is 64 TODO: make this generic
+
         self.total_encoder_out_size = self.self_encoder_out_size + self.neighbor_encoder_out_size + self.obstacle_encoder_out_size
-        self.feed_forward = fc_layer(self.total_encoder_out_size, cfg.hidden_size, spec_norm=self.use_spectral_norm)
+        self.feed_forward = fc_layer(self.self_encoder_out_size + self.conv_out_size, cfg.hidden_size, spec_norm=self.use_spectral_norm)
 
         self.init_fc_blocks(cfg.hidden_size)
 
@@ -68,14 +84,26 @@ class QuadMultiMeanEncoder(EncoderBase):
         neighbor_embeds = neighbor_embeds.reshape(batch_size, -1, self.neighbor_hidden_size)
         mean_embed = torch.mean(neighbor_embeds, dim=1)
 
+        if len(self.memory) == T:
+            self.memory = self.memory[1:]
+            self.memory.append(mean_embed)
+            timeseries = torch.stack(self.memory)
+        else:
+            self.memory.append(mean_embed)
+            num_empty = T - len(self.memory)
+            zeros = torch.zeros((batch_size, num_empty, self.neighbor_encoder_out_size))
+            timeseries = torch.cat((zeros, torch.stack(self.memory).reshape(batch_size, -1, self.neighbor_encoder_out_size)), dim=1)
+
+        res = self.conv_layer(timeseries).view(batch_size, -1)
+
         if self.obstacle_mode == 'no_obstacles':
-            embeddings = torch.cat((self_embed, mean_embed), dim=1)
+            embeddings = torch.cat((self_embed, res), dim=1)
         else:
             obs_obstacles = obs_obstacles.reshape(-1, self.obstacle_obs_dim)
             obstacle_embeds = self.obstacle_encoder(obs_obstacles)
             obstacle_embeds = obstacle_embeds.reshape(batch_size, -1, self.obstacle_hidden_size)
             obstacle_mean_embed = torch.mean(obstacle_embeds, dim=1)
-            embeddings = torch.cat((self_embed, mean_embed, obstacle_mean_embed), dim=1)
+            embeddings = torch.cat((self_embed, res, obstacle_mean_embed), dim=1)
 
         out = self.feed_forward(embeddings)
         return out
