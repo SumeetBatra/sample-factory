@@ -84,6 +84,7 @@ class QuadMultiMeanEncoder(EncoderBase):
         neighbor_embeds = neighbor_embeds.reshape(batch_size, -1, self.neighbor_hidden_size)
         mean_embed = torch.mean(neighbor_embeds, dim=1)
 
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if len(self.memory) == T:
             self.memory = self.memory[1:]
             self.memory.append(mean_embed)
@@ -91,7 +92,7 @@ class QuadMultiMeanEncoder(EncoderBase):
         else:
             self.memory.append(mean_embed)
             num_empty = T - len(self.memory)
-            zeros = torch.zeros((batch_size, num_empty, self.neighbor_encoder_out_size))
+            zeros = torch.zeros((batch_size, num_empty, self.neighbor_encoder_out_size)).to(device)
             timeseries = torch.cat((zeros, torch.stack(self.memory).reshape(batch_size, -1, self.neighbor_encoder_out_size)), dim=1)
 
         res = self.conv_layer(timeseries).view(batch_size, -1)
