@@ -46,6 +46,10 @@ else:
 
 
 torch.multiprocessing.set_sharing_strategy('file_system')
+from sys import platform
+if platform == 'darwin':
+    import multiprocessing as mp
+    mp.set_start_method('fork')
 
 
 class APPO(ReinforcementLearningAlgorithm):
