@@ -24,6 +24,8 @@ class QuadMultiMeanEncoder(EncoderBase):
             self.neighbor_obs_dim = 9  # include goal pos info
         elif self.neighbor_obs_type == 'pos_vel':
             self.neighbor_obs_dim = 6
+        elif self.neighbor_obs_type == 'cadrl':
+            self.neighbor_obs_dim = 9
         elif cfg.neighbor_obs_type == 'none':
             # override these params so that neighbor encoder is a no-op during inference
             self.neighbor_obs_dim = 0
