@@ -95,6 +95,27 @@ class QuadNeighborhoodEncoderAttention(QuadNeighborhoodEncoder):
         return final_neighborhood_embedding
 
 
+class QuadNeighborhoodEncoderMlp(QuadNeighborhoodEncoder):
+    def __init__(self, cfg, neighbor_obs_dim, neighbor_hidden_size, use_spectral_norm, self_obs_dim, num_use_neighbor_obs):
+        super().__init__(cfg, self_obs_dim, neighbor_obs_dim, neighbor_hidden_size, num_use_neighbor_obs)
+
+        self.self_obs_dim = self_obs_dim
+
+        self.neighbor_mlp = nn.Sequential(
+            fc_layer(neighbor_obs_dim * num_use_neighbor_obs, neighbor_hidden_size, spec_norm=use_spectral_norm),
+            nonlinearity(cfg),
+            fc_layer(neighbor_hidden_size, neighbor_hidden_size, spec_norm=use_spectral_norm),
+            nonlinearity(cfg),
+            fc_layer(neighbor_hidden_size, neighbor_hidden_size, spec_norm=use_spectral_norm),
+            nonlinearity(cfg),
+        )
+
+    def forward(self, self_obs, obs, all_neighbor_obs_size, batch_size):
+        obs_neighbors = obs[:, self.self_obs_dim:self.self_obs_dim + all_neighbor_obs_size]
+        final_neighborhood_embedding = self.neighbor_mlp(obs_neighbors)
+        return final_neighborhood_embedding
+
+
 class QuadMultiEncoder(EncoderBase):
     # Mean embedding encoder based on the DeepRL for Swarms Paper
     def __init__(self, cfg, obs_space, timing):
@@ -108,7 +129,6 @@ class QuadMultiEncoder(EncoderBase):
             raise NotImplementedError(f'Layer {cfg.quads_obs_repr} not supported!')
 
         self.neighbor_hidden_size = cfg.quads_neighbor_hidden_size
-        self.obstacle_obs_dim = 6
 
         self.neighbor_obs_type = cfg.neighbor_obs_type
         self.use_spectral_norm = cfg.use_spectral_norm
@@ -133,6 +153,8 @@ class QuadMultiEncoder(EncoderBase):
 
         # encode the neighboring drone's observations
         neighbor_encoder_out_size = 0
+        self.neighbor_encoder = None
+
         if self.num_use_neighbor_obs > 0:
             neighbor_encoder_type = cfg.quads_neighbor_encoder_type
             if neighbor_encoder_type == 'mean_embed':
@@ -143,8 +165,16 @@ class QuadMultiEncoder(EncoderBase):
                 self.neighbor_encoder = QuadNeighborhoodEncoderAttention(cfg, self.neighbor_obs_dim,
                                                                          self.neighbor_hidden_size, self.use_spectral_norm,
                                                                          self.self_obs_dim, self.num_use_neighbor_obs)
+            elif neighbor_encoder_type == 'mlp':
+                self.neighbor_encoder = QuadNeighborhoodEncoderMlp(cfg, self.neighbor_obs_dim,
+                                                                   self.neighbor_hidden_size, self.use_spectral_norm,
+                                                                   self.self_obs_dim, self.num_use_neighbor_obs)
+            elif neighbor_encoder_type == 'no_encoder':
+                self.neighbor_encoder = None  # blind agent
             else:
-                raise NotImplementedError()
+                raise NotImplementedError
+
+        if self.neighbor_encoder:
             neighbor_encoder_out_size = self.neighbor_hidden_size
 
         fc_encoder_layer = cfg.hidden_size
@@ -160,7 +190,7 @@ class QuadMultiEncoder(EncoderBase):
         # encode the obstacle observations
         obstacle_encoder_out_size = 0
         if self.obstacle_mode != 'no_obstacles':
-            self.obstacle_obs_dim = 6  # internal param
+            self.obstacle_obs_dim = 10  # internal param, pos_vel_size_type, 3 * 3 + 1, note: for size, we should consider it's length in xyz direction
             self.obstacle_hidden_size = 32  # internal param
             self.obstacle_encoder = nn.Sequential(
                 fc_layer(self.obstacle_obs_dim, self.obstacle_hidden_size, spec_norm=self.use_spectral_norm),
@@ -189,7 +219,7 @@ class QuadMultiEncoder(EncoderBase):
         batch_size = obs_self.shape[0]
         # relative xyz and vxyz for the entire minibatch (batch dimension is batch_size * num_neighbors)
         all_neighbor_obs_size = self.neighbor_obs_dim * self.num_use_neighbor_obs
-        if self.num_use_neighbor_obs > 0:
+        if self.num_use_neighbor_obs > 0 and self.neighbor_encoder:
             neighborhood_embedding = self.neighbor_encoder(obs_self, obs, all_neighbor_obs_size, batch_size)
             embeddings = torch.cat((embeddings, neighborhood_embedding), dim=1)
 
