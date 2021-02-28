@@ -944,7 +944,7 @@ class LearnerWorker:
             self.train_step = checkpoint_dict['train_step']
             self.env_steps = checkpoint_dict['env_steps']
         if self.cfg.finetune:
-            checkpoint_dict['model']['action_parameterization.learned_stddev'].fill_(-1.5)
+            checkpoint_dict['model']['action_parameterization.learned_stddev'].fill_(-1.0)
         self.actor_critic.load_state_dict(checkpoint_dict['model'])
         self.optimizer.load_state_dict(checkpoint_dict['optimizer'])
         if self.aux_loss_module is not None:
